@@ -268,7 +268,7 @@ static void adc_init(machine_adc_obj_t *self) {
 
         #endif
     }
-    mp_printf(MP_PYTHON_PRINTER, "Setting id=%id PMUX to ADC\n", self->id);
+    mp_printf(MP_PYTHON_PRINTER, "Setting id=%d PMUX to ADC\n", self->id);
     // Set the port as given in self->id as ADC
     mp_hal_set_pin_mux(self->id, ALT_FCT_ADC);
 }
