@@ -9,6 +9,8 @@ A7_D7,PB09
 A8_D8,PA07
 A9_D9,PA05
 A10_D10,PA06
+# not directly accessible
+VREFA,PA03
 
 USER_LED,PA17
 RX_LED,PA18
