@@ -3,7 +3,7 @@
  *
  * The MIT License (MIT)
  *
- * Copyright (c) 2018 Damien P. George
+ * Copyright (c) 2016-2018 Damien P. George
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,12 +23,10 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#ifndef MICROPY_INCLUDED_QEMU_ARM_UART_H
-#define MICROPY_INCLUDED_QEMU_ARM_UART_H
 
 #include <stddef.h>
 
-void uart_init(void);
-void uart_tx_strn(const char *buf, size_t len);
+#include "uart.h"
 
-#endif // MICROPY_INCLUDED_QEMU_ARM_UART_H
+#define mp_hal_stdin_rx_chr() (0)
+#define mp_hal_stdout_tx_strn_cooked(s, l) uart_tx_strn((s), (l))
