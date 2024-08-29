@@ -39,6 +39,7 @@ typedef struct _machine_adc_obj_t {
     uint8_t avg;
     uint8_t bits;
     uint8_t vref;
+    uint8_t attenu;
 } machine_adc_obj_t;
 
 #define DEFAULT_ADC_BITS    12
@@ -95,12 +96,13 @@ static void mp_machine_adc_print(const mp_print_t *print, mp_obj_t self_in, mp_p
 }
 
 static mp_obj_t mp_machine_adc_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args) {
-    enum { ARG_id, ARG_bits, ARG_average, ARG_vref };
+    enum { ARG_id, ARG_bits, ARG_average, ARG_vref, ARG_attenu };
     static const mp_arg_t allowed_args[] = {
         { MP_QSTR_id,       MP_ARG_REQUIRED | MP_ARG_OBJ },
         { MP_QSTR_bits,     MP_ARG_INT, {.u_int = DEFAULT_ADC_BITS} },
         { MP_QSTR_average,  MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = DEFAULT_ADC_AVG} },
         { MP_QSTR_vref,     MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = DEFAULT_ADC_VREF} },
+	{ MP_QSTR_attenu,   MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = 0} },     // //RJS Gain .. non zero if DIV2
     };
 
     // Parse the arguments.
@@ -127,6 +129,7 @@ static mp_obj_t mp_machine_adc_make_new(const mp_obj_type_t *type, size_t n_args
     if (0 <= vref && vref < sizeof(adc_vref_table)) {
         self->vref = vref;
     }
+    self->attenu = args[ARG_attenu].u_int;     //RJS Gain
 
     // flag the device/channel as being in use.
     busy_flags |= (1 << (self->adc_config.device * 16 + self->adc_config.channel));
@@ -142,9 +145,18 @@ static mp_int_t mp_machine_adc_read_u16(machine_adc_obj_t *self) {
     Adc *adc = adc_bases[self->adc_config.device];
     // Set the reference voltage. Default: external AREFA.
     adc->REFCTRL.reg = adc_vref_table[self->vref];
+   
+    uint32_t attenu = 0;   // RJS Gain ... for DIV2 if desired.
+#if defined(MCU_SAMD21)
+    // RJS Gain if vref == VDD/2, use gain DV2 to normalize to VDD
+    if ((adc_vref_table[self->vref] == ADC_REFCTRL_REFSEL_INTVCC1_Val) && (self->attenu != 0)) {
+      attenu=ADC_INPUTCTRL_GAIN_DIV2;  //  _Val is simp 4bit value 0XF .. now shifted to upper bits
+    }
+#endif
     // Set Input channel and resolution
     // Select the pin as positive input and gnd as negative input reference, non-diff mode by default
-    adc->INPUTCTRL.reg = ADC_INPUTCTRL_MUXNEG_GND | self->adc_config.channel;
+    adc->INPUTCTRL.reg = attenu | ADC_INPUTCTRL_MUXNEG_GND | self->adc_config.channel;
+    // end RJS
     // set resolution. Scale 8-16 to 0 - 4 for table access.
     adc->CTRLB.bit.RESSEL = resolution[(self->bits - 8) / 2];
     // Measure input voltage
@@ -172,6 +184,19 @@ static void adc_init(machine_adc_obj_t *self) {
         Adc *adc = adc_bases[self->adc_config.device];
 
         init_flags[self->adc_config.device] = true;
+        #if defined(MCU_SAMD21)
+	// RJS SAMD XIAO  ... set VREFA pin high
+	
+	if (adc_vref_table[self->vref] == ADC_REFCTRL_REFSEL_AREFA_Val) {
+	  int id = 3;//mp_hal_get_pin_obj("PA03");   // get VREF pin
+	  mp_hal_clr_pin_mux(id);                 // reset before writing
+	  mp_hal_pin_write(id, 1);                // set  high
+	  mp_hal_pin_output(id);                  // as output
+	  // if set, does not work .. ref not set .. 
+	  // mp_hal_set_pin_mux(id,ALT_FCT_VREF);    // now define pmux as VREF
+	  mp_printf(MP_PYTHON_PRINTER, "VREFA set id=%d to output, val=1, then mo pmux\n",id);
+	}
+	#endif
 
         #if defined(MCU_SAMD21)
         // Configuration SAMD21
@@ -243,6 +268,7 @@ static void adc_init(machine_adc_obj_t *self) {
 
         #endif
     }
+    mp_printf(MP_PYTHON_PRINTER, "Setting id=%d PMUX to ADC\n", self->id);
     // Set the port as given in self->id as ADC
     mp_hal_set_pin_mux(self->id, ALT_FCT_ADC);
 }
