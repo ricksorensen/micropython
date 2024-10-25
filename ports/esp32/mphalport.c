@@ -44,7 +44,6 @@
 #include "shared/runtime/pyexec.h"
 #include "shared/tinyusb/mp_usbd.h"
 #include "shared/tinyusb/mp_usbd_cdc.h"
-#include "mphalport.h"
 #include "usb.h"
 #include "usb_serial_jtag.h"
 #include "uart.h"
@@ -57,6 +56,8 @@ TaskHandle_t mp_main_task_handle;
 
 static uint8_t stdin_ringbuf_array[260];
 ringbuf_t stdin_ringbuf = {stdin_ringbuf_array, sizeof(stdin_ringbuf_array), 0, 0};
+
+portMUX_TYPE mp_atomic_mux = portMUX_INITIALIZER_UNLOCKED;
 
 // Check the ESP-IDF error code and raise an OSError if it's not ESP_OK.
 #if MICROPY_ERROR_REPORTING <= MICROPY_ERROR_REPORTING_NORMAL
@@ -108,12 +109,6 @@ uintptr_t mp_hal_stdio_poll(uintptr_t poll_flags) {
     uintptr_t ret = 0;
     #if MICROPY_HW_ESP_USB_SERIAL_JTAG
     usb_serial_jtag_poll_rx();
-    if ((poll_flags & MP_STREAM_POLL_RD) && ringbuf_peek(&stdin_ringbuf) != -1) {
-        ret |= MP_STREAM_POLL_RD;
-    }
-    if (poll_flags & MP_STREAM_POLL_WR) {
-        ret |= MP_STREAM_POLL_WR;
-    }
     #endif
     #if MICROPY_HW_USB_CDC
     ret |= mp_usbd_cdc_poll_interfaces(poll_flags);
@@ -121,6 +116,13 @@ uintptr_t mp_hal_stdio_poll(uintptr_t poll_flags) {
     #if MICROPY_PY_OS_DUPTERM
     ret |= mp_os_dupterm_poll(poll_flags);
     #endif
+    // Check ringbuffer directly for uart and usj.
+    if ((poll_flags & MP_STREAM_POLL_RD) && ringbuf_peek(&stdin_ringbuf) != -1) {
+        ret |= MP_STREAM_POLL_RD;
+    }
+    if (poll_flags & MP_STREAM_POLL_WR) {
+        ret |= MP_STREAM_POLL_WR;
+    }
     return ret;
 }
 
