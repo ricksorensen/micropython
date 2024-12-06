@@ -94,7 +94,7 @@ static void IRAM_ATTR machine_bitstream_high_low_bitbang(mp_hal_pin_obj_t pin, u
 // RMT implementation
 
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5,3,0)
-#include "rmt_private.h" //RJS  need to add rmt_private path in _common.cmake
+#include "rmt_private.h"
 #endif
 #include "driver/rmt_tx.h"
 #include "driver/rmt_encoder.h"
@@ -112,7 +112,7 @@ static void machine_bitstream_high_low_rmt(mp_hal_pin_obj_t pin, uint32_t *timin
         .trans_queue_depth = 1,
     };
     check_esp_err(rmt_new_tx_channel(&tx_chan_config, &channel));
-    check_esp_err(rmt_enable_core1(channel));
+    check_esp_err(rmt_enable(channel));
 
     // Get the tick rate in kHz (this will likely be 40000).
     uint32_t counter_clk_khz = APB_CLK_FREQ / clock_div;
@@ -150,7 +150,8 @@ static void machine_bitstream_high_low_rmt(mp_hal_pin_obj_t pin, uint32_t *timin
     rmt_encoder_reset(encoder);
     check_esp_err(rmt_transmit(channel, encoder, buf, len, &tx_config));
 
-    check_esp_err(rmt_tx_wait_all_done(channel, -1));
+    // Wait until completion.
+    rmt_tx_wait_all_done(channel, -1);
 
     // Disable and release channel.
     check_esp_err(rmt_del_encoder(encoder));
@@ -158,7 +159,7 @@ static void machine_bitstream_high_low_rmt(mp_hal_pin_obj_t pin, uint32_t *timin
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5,3,0)
     channel->del(channel);
 #else
-    rmt_del_channel(channel);    // RJS untested
+    rmt_del_channel(channel);
 #endif
 
     // Cancel RMT output to GPIO pin.
