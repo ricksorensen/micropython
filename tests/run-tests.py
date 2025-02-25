@@ -65,7 +65,9 @@ injected_import_hook_code = """\
 import sys, os, io, vfs
 class __File(io.IOBase):
   def __init__(self):
-    sys.modules['__injected_test'].__name__ = '__main__'
+    module = sys.modules['__injected_test']
+    module.__name__ = '__main__'
+    sys.modules['__main__'] = module
     self.off = 0
   def ioctl(self, request, arg):
     if request == 4: # MP_STREAM_CLOSE
@@ -82,6 +84,8 @@ class __FS:
     pass
   def chdir(self, path):
     pass
+  def getcwd(self):
+    return ""
   def stat(self, path):
     if path == '__injected_test.mpy':
       return tuple(0 for _ in range(10))
@@ -844,7 +848,7 @@ def run_tests(pyb, tests, args, result_dir, num_threads=1):
         test_file_abspath = os.path.abspath(test_file).replace("\\", "/")
 
         if args.filters:
-            # Default verdict is the opposit of the first action
+            # Default verdict is the opposite of the first action
             verdict = "include" if args.filters[0][0] == "exclude" else "exclude"
             for action, pat in args.filters:
                 if pat.search(test_file):
@@ -951,8 +955,8 @@ def run_tests(pyb, tests, args, result_dir, num_threads=1):
                         cwd=os.path.dirname(test_file),
                         stderr=subprocess.STDOUT,
                     )
-                except subprocess.CalledProcessError:
-                    output_expected = b"CPYTHON3 CRASH"
+                except subprocess.CalledProcessError as er:
+                    output_expected = b"CPYTHON3 CRASH:\n" + er.output
 
             # Canonical form for all host platforms is to use \n for end-of-line.
             output_expected = output_expected.replace(b"\r\n", b"\n")
