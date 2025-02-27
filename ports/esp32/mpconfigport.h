@@ -334,7 +334,7 @@ typedef long mp_off_t;
 #include <sys/types.h>
 
 // board specifics
-#define MICROPY_PY_SYS_PLATFORM "esp32"
+#define MICROPY_PY_SYS_PLATFORM "esp32rmt5"
 
 // ESP32-S3 extended IO for 47 & 48
 #ifndef MICROPY_HW_ESP32S3_EXTENDED_IO
