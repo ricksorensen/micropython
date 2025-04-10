@@ -163,6 +163,7 @@ platform_tests_to_skip = {
         "extmod/asyncio_threadsafeflag.py",
         "extmod/asyncio_wait_for_fwd.py",
         "extmod/binascii_a2b_base64.py",
+        "extmod/deflate_compress_memory_error.py",  # tries to allocate unlimited memory
         "extmod/re_stack_overflow.py",
         "extmod/time_res.py",
         "extmod/vfs_posix.py",
@@ -996,11 +997,23 @@ def run_tests(pyb, tests, args, result_dir, num_threads=1):
             if output_expected is not None:
                 with open(filename_expected, "wb") as f:
                     f.write(output_expected)
+            else:
+                rm_f(filename_expected)  # in case left over from previous failed run
             with open(filename_mupy, "wb") as f:
                 f.write(output_mupy)
             failed_tests.append((test_name, test_file))
 
         test_count.increment()
+
+        # Print a note if this looks like it might have been a misfired unittest
+        if not uses_unittest and not test_passed:
+            with open(test_file, "r") as f:
+                if any(re.match("^import.+unittest", l) for l in f.readlines()):
+                    print(
+                        "NOTE: {} may be a unittest that doesn't run unittest.main()".format(
+                            test_file
+                        )
+                    )
 
     if pyb:
         num_threads = 1
