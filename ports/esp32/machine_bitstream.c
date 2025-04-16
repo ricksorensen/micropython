@@ -93,7 +93,7 @@ static void IRAM_ATTR machine_bitstream_high_low_bitbang(mp_hal_pin_obj_t pin, u
 /******************************************************************************/
 // RMT implementation
 
-#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5,3,0)
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 3, 0)
 #include "rmt_private.h"
 #endif
 #include "driver/rmt_tx.h"
@@ -156,11 +156,11 @@ static void machine_bitstream_high_low_rmt(mp_hal_pin_obj_t pin, uint32_t *timin
     // Disable and release channel.
     check_esp_err(rmt_del_encoder(encoder));
     rmt_disable(channel);
-#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5,3,0)
+    #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 3, 0)
     channel->del(channel);
-#else
+    #else
     rmt_del_channel(channel);
-#endif
+    #endif
 
     // Cancel RMT output to GPIO pin.
     esp_rom_gpio_connect_out_signal(pin, SIG_GPIO_OUT_IDX, false, false);
