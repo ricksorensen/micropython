@@ -390,10 +390,15 @@ static inline uint32_t mp_popcount(uint32_t x) {
     x = x - ((x >> 1) & 0x55555555);
     x = (x & 0x33333333) + ((x >> 2) & 0x33333333);
     x = (x + (x >> 4)) & 0x0F0F0F0F;
-    return x * 0x01010101;
+    return (x * 0x01010101) >> 24;
 }
 #endif
 #endif
+
+#define MP_FIT_UNSIGNED(bits, value) (((value) & (~0U << (bits))) == 0)
+#define MP_FIT_SIGNED(bits, value) \
+    (MP_FIT_UNSIGNED(((bits) - 1), (value)) || \
+    (((value) & (~0U << ((bits) - 1))) == (~0U << ((bits) - 1))))
 
 // mp_int_t can be larger than long, i.e. Windows 64-bit, nan-box variants
 static inline uint32_t mp_clz_mpi(mp_int_t x) {

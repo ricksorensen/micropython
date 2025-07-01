@@ -95,6 +95,7 @@ class __FS:
     return __File()
 vfs.mount(__FS(), '/__vfstest')
 os.chdir('/__vfstest')
+{import_prologue}
 __import__('__injected_test')
 """
 
@@ -405,6 +406,10 @@ def run_micropython(pyb, args, test_file, test_file_abspath, is_special=False):
                                     return rv
 
                     def send_get(what):
+                        # Detect {\x00} pattern and convert to ctrl-key codes.
+                        ctrl_code = lambda m: bytes([int(m.group(1))])
+                        what = re.sub(rb'{\\x(\d\d)}', ctrl_code, what)
+
                         os.write(master, what)
                         return get()
 
@@ -616,7 +621,6 @@ class PyboardNodeRunner:
 
 
 def run_tests(pyb, tests, args, result_dir, num_threads=1):
-    test_count = ThreadSafeCounter()
     testcase_count = ThreadSafeCounter()
     test_results = ThreadSafeCounter([])
 
@@ -875,11 +879,7 @@ def run_tests(pyb, tests, args, result_dir, num_threads=1):
 
         test_basename = test_file.replace("..", "_").replace("./", "").replace("/", "_")
         test_name = os.path.splitext(os.path.basename(test_file))[0]
-        is_native = (
-            test_name.startswith("native_")
-            or test_name.startswith("viper_")
-            or args.emit == "native"
-        )
+        is_native = test_name.startswith("native_") or test_name.startswith("viper_")
         is_endian = test_name.endswith("_endian")
         is_int_big = test_name.startswith("int_big") or test_name.endswith("_intbig")
         is_bytearray = test_name.startswith("bytearray") or test_name.endswith("_bytearray")
@@ -907,7 +907,7 @@ def run_tests(pyb, tests, args, result_dir, num_threads=1):
 
         if skip_it:
             print("skip ", test_file)
-            test_results.append((test_name, test_file, "skip", ""))
+            test_results.append((test_file, "skip", ""))
             return
 
         # Run the test on the MicroPython target.
@@ -922,11 +922,11 @@ def run_tests(pyb, tests, args, result_dir, num_threads=1):
                 # start-up code (eg boot.py) when preparing to run the next test.
                 pyb.read_until(1, b"raw REPL; CTRL-B to exit\r\n")
             print("skip ", test_file)
-            test_results.append((test_name, test_file, "skip", ""))
+            test_results.append((test_file, "skip", ""))
             return
         elif output_mupy == b"SKIP-TOO-LARGE\n":
             print("lrge ", test_file)
-            test_results.append((test_name, test_file, "skip", "too large"))
+            test_results.append((test_file, "skip", "too large"))
             return
 
         # Look at the output of the test to see if unittest was used.
@@ -1009,7 +1009,7 @@ def run_tests(pyb, tests, args, result_dir, num_threads=1):
         # Print test summary, update counters, and save .exp/.out files if needed.
         if test_passed:
             print("pass ", test_file, extra_info)
-            test_results.append((test_name, test_file, "pass", ""))
+            test_results.append((test_file, "pass", ""))
             rm_f(filename_expected)
             rm_f(filename_mupy)
         else:
@@ -1021,9 +1021,7 @@ def run_tests(pyb, tests, args, result_dir, num_threads=1):
                 rm_f(filename_expected)  # in case left over from previous failed run
             with open(filename_mupy, "wb") as f:
                 f.write(output_mupy)
-            test_results.append((test_name, test_file, "fail", ""))
-
-        test_count.increment()
+            test_results.append((test_file, "fail", ""))
 
         # Print a note if this looks like it might have been a misfired unittest
         if not uses_unittest and not test_passed:
@@ -1050,19 +1048,27 @@ def run_tests(pyb, tests, args, result_dir, num_threads=1):
             print(line)
         sys.exit(1)
 
-    test_results = test_results.value
-    passed_tests = list(r for r in test_results if r[2] == "pass")
-    skipped_tests = list(r for r in test_results if r[2] == "skip" and r[3] != "too large")
-    skipped_tests_too_large = list(
-        r for r in test_results if r[2] == "skip" and r[3] == "too large"
-    )
-    failed_tests = list(r for r in test_results if r[2] == "fail")
+    # Return test results.
+    return test_results.value, testcase_count.value
 
-    print(
-        "{} tests performed ({} individual testcases)".format(
-            test_count.value, testcase_count.value
-        )
+
+# Print a summary of the results and save them to a JSON file.
+# Returns True if everything succeeded, False otherwise.
+def create_test_report(args, test_results, testcase_count=None):
+    passed_tests = list(r for r in test_results if r[1] == "pass")
+    skipped_tests = list(r for r in test_results if r[1] == "skip" and r[2] != "too large")
+    skipped_tests_too_large = list(
+        r for r in test_results if r[1] == "skip" and r[2] == "too large"
     )
+    failed_tests = list(r for r in test_results if r[1] == "fail")
+
+    num_tests_performed = len(passed_tests) + len(failed_tests)
+
+    testcase_count_info = ""
+    if testcase_count is not None:
+        testcase_count_info = " ({} individual testcases)".format(testcase_count)
+    print("{} tests performed{}".format(num_tests_performed, testcase_count_info))
+
     print("{} tests passed".format(len(passed_tests)))
 
     if len(skipped_tests) > 0:
@@ -1092,15 +1098,15 @@ def run_tests(pyb, tests, args, result_dir, num_threads=1):
             return obj.pattern
         return obj
 
-    with open(os.path.join(result_dir, RESULTS_FILE), "w") as f:
+    with open(os.path.join(args.result_dir, RESULTS_FILE), "w") as f:
         json.dump(
             {
                 # The arguments passed on the command-line.
                 "args": vars(args),
                 # A list of all results of the form [(test, result, reason), ...].
-                "results": list(test[1:] for test in test_results),
+                "results": list(test for test in test_results),
                 # A list of failed tests.  This is deprecated, use the "results" above instead.
-                "failed_tests": [test[1] for test in failed_tests],
+                "failed_tests": [test[0] for test in failed_tests],
             },
             f,
             default=to_json,
@@ -1125,6 +1131,8 @@ class append_filter(argparse.Action):
 
 
 def main():
+    global injected_import_hook_code
+
     cmd_parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description="""Run and manage tests for MicroPython.
@@ -1234,7 +1242,19 @@ the last matching regex is used:
         action="store_true",
         help="re-run only the failed tests",
     )
+    cmd_parser.add_argument(
+        "--begin",
+        metavar="PROLOGUE",
+        default=None,
+        help="prologue python file to execute before module import",
+    )
     args = cmd_parser.parse_args()
+
+    prologue = ""
+    if args.begin:
+        with open(args.begin, "rt") as source:
+            prologue = source.read()
+    injected_import_hook_code = injected_import_hook_code.replace("{import_prologue}", prologue)
 
     if args.print_failures:
         for out in glob(os.path.join(args.result_dir, "*.out")):
@@ -1354,7 +1374,8 @@ the last matching regex is used:
 
     try:
         os.makedirs(args.result_dir, exist_ok=True)
-        res = run_tests(pyb, tests, args, args.result_dir, args.jobs)
+        test_results, testcase_count = run_tests(pyb, tests, args, args.result_dir, args.jobs)
+        res = create_test_report(args, test_results, testcase_count)
     finally:
         if pyb:
             pyb.close()
