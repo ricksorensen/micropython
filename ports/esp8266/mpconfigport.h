@@ -106,6 +106,7 @@
 #define MICROPY_PY_OS_URANDOM       (1)
 #define MICROPY_LONGINT_IMPL        (MICROPY_LONGINT_IMPL_MPZ)
 #define MICROPY_FLOAT_IMPL          (MICROPY_FLOAT_IMPL_FLOAT)
+#define MICROPY_FLOAT_FORMAT_IMPL   (MICROPY_FLOAT_FORMAT_IMPL_BASIC)
 #define MICROPY_WARNINGS            (1)
 #define MICROPY_PY_STR_BYTES_CMP_WARN (1)
 #define MICROPY_STREAMS_POSIX_API   (1)
@@ -149,9 +150,6 @@
 #define MICROPY_MAKE_POINTER_CALLABLE(p) ((void *)((mp_uint_t)(p)))
 
 #define MP_SSIZE_MAX (0x7fffffff)
-
-#define UINT_FMT "%u"
-#define INT_FMT "%d"
 
 typedef int32_t mp_int_t; // must be pointer size
 typedef uint32_t mp_uint_t; // must be pointer size

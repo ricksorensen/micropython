@@ -15,8 +15,8 @@ from multiprocessing.pool import ThreadPool
 import threading
 import tempfile
 
-# Maximum time to run a PC-based test, in seconds.
-TEST_TIMEOUT = 30
+# Maximum time to run a single test, in seconds.
+TEST_TIMEOUT = float(os.environ.get("MICROPY_TEST_TIMEOUT", 30))
 
 # See stackoverflow.com/questions/2632199: __file__ nor sys.argv[0]
 # are guaranteed to always work, this one should though.
@@ -105,9 +105,6 @@ PC_PLATFORMS = ("darwin", "linux", "win32")
 # Tests to skip on specific targets.
 # These are tests that are difficult to detect that they should not be run on the given target.
 platform_tests_to_skip = {
-    "esp8266": (
-        "misc/rge_sm.py",  # incorrect values due to object representation C
-    ),
     "minimal": (
         "basics/class_inplace_op.py",  # all special methods not supported
         "basics/subclass_native_init.py",  # native subclassing corner cases not support
@@ -251,22 +248,27 @@ def detect_test_platform(pyb, args):
     output = run_feature_check(pyb, args, "target_info.py")
     if output.endswith(b"CRASH"):
         raise ValueError("cannot detect platform: {}".format(output))
-    platform, arch = str(output, "ascii").strip().split()
+    platform, arch, thread = str(output, "ascii").strip().split()
     if arch == "None":
         arch = None
     inlineasm_arch = detect_inline_asm_arch(pyb, args)
+    if thread == "None":
+        thread = None
 
     args.platform = platform
     args.arch = arch
     if arch and not args.mpy_cross_flags:
         args.mpy_cross_flags = "-march=" + arch
     args.inlineasm_arch = inlineasm_arch
+    args.thread = thread
 
     print("platform={}".format(platform), end="")
     if arch:
         print(" arch={}".format(arch), end="")
     if inlineasm_arch:
         print(" inlineasm={}".format(inlineasm_arch), end="")
+    if thread:
+        print(" thread={}".format(thread), end="")
     print()
 
 
@@ -328,7 +330,7 @@ def run_script_on_remote_target(pyb, args, test_file, is_special):
     try:
         had_crash = False
         pyb.enter_raw_repl()
-        output_mupy = pyb.exec_(script)
+        output_mupy = pyb.exec_(script, timeout=TEST_TIMEOUT)
     except pyboard.PyboardError as e:
         had_crash = True
         if not is_special and e.args[0] == "exception":
@@ -354,6 +356,7 @@ special_tests = [
         "micropython/meminfo.py",
         "basics/bytes_compare3.py",
         "basics/builtin_help.py",
+        "misc/sys_settrace_cov.py",
         "thread/thread_exc2.py",
         "ports/esp32/partition_ota.py",
     )
@@ -408,7 +411,7 @@ def run_micropython(pyb, args, test_file, test_file_abspath, is_special=False):
                     def send_get(what):
                         # Detect {\x00} pattern and convert to ctrl-key codes.
                         ctrl_code = lambda m: bytes([int(m.group(1))])
-                        what = re.sub(rb'{\\x(\d\d)}', ctrl_code, what)
+                        what = re.sub(rb"{\\x(\d\d)}", ctrl_code, what)
 
                         os.write(master, what)
                         return get()
@@ -627,6 +630,7 @@ def run_tests(pyb, tests, args, result_dir, num_threads=1):
     skip_tests = set()
     skip_native = False
     skip_int_big = False
+    skip_int_64 = False
     skip_bytearray = False
     skip_set_type = False
     skip_slice = False
@@ -656,6 +660,11 @@ def run_tests(pyb, tests, args, result_dir, num_threads=1):
         output = run_feature_check(pyb, args, "int_big.py")
         if output != b"1000000000000000000000000000000000000000000000\n":
             skip_int_big = True
+
+        # Check if 'long long' precision integers are supported, even if arbitrary precision is not
+        output = run_feature_check(pyb, args, "int_64.py")
+        if output != b"4611686018427387904\n":
+            skip_int_64 = True
 
         # Check if bytearray is supported, and skip such tests if it's not
         output = run_feature_check(pyb, args, "bytearray.py")
@@ -777,14 +786,15 @@ def run_tests(pyb, tests, args, result_dir, num_threads=1):
             "float/float2int_intbig.py"
         )  # requires fp32, there's float2int_fp30_intbig.py instead
         skip_tests.add(
-            "float/string_format.py"
-        )  # requires fp32, there's string_format_fp30.py instead
+            "float/float_struct_e.py"
+        )  # requires fp32, there's float_struct_e_fp30.py instead
         skip_tests.add("float/bytes_construct.py")  # requires fp32
         skip_tests.add("float/bytearray_construct.py")  # requires fp32
         skip_tests.add("float/float_format_ints_power10.py")  # requires fp32
     if upy_float_precision < 64:
         skip_tests.add("float/float_divmod.py")  # tested by float/float_divmod_relaxed.py instead
         skip_tests.add("float/float2int_doubleprec_intbig.py")
+        skip_tests.add("float/float_struct_e_doubleprec.py")
         skip_tests.add("float/float_format_ints_doubleprec.py")
         skip_tests.add("float/float_parse_doubleprec.py")
 
@@ -803,8 +813,8 @@ def run_tests(pyb, tests, args, result_dir, num_threads=1):
         skip_tests.add("cmdline/repl_sys_ps1_ps2.py")
         skip_tests.add("extmod/ssl_poll.py")
 
-    # Skip thread mutation tests on targets that don't have the GIL.
-    if args.platform in PC_PLATFORMS + ("rp2",):
+    # Skip thread mutation tests on targets that have unsafe threading behaviour.
+    if args.thread == "unsafe":
         for t in tests:
             if t.startswith("thread/mutate_"):
                 skip_tests.add(t)
@@ -854,6 +864,9 @@ def run_tests(pyb, tests, args, result_dir, num_threads=1):
             "micropython/emg_exc.py"
         )  # because native doesn't have proper traceback info
         skip_tests.add(
+            "micropython/heapalloc_slice.py"
+        )  # because native doesn't do the stack-allocated slice optimisation
+        skip_tests.add(
             "micropython/heapalloc_traceback.py"
         )  # because native doesn't have proper traceback info
         skip_tests.add(
@@ -881,11 +894,16 @@ def run_tests(pyb, tests, args, result_dir, num_threads=1):
         test_name = os.path.splitext(os.path.basename(test_file))[0]
         is_native = test_name.startswith("native_") or test_name.startswith("viper_")
         is_endian = test_name.endswith("_endian")
-        is_int_big = test_name.startswith("int_big") or test_name.endswith("_intbig")
+        is_int_big = (
+            test_name.startswith("int_big")
+            or test_name.endswith("_intbig")
+            or test_name.startswith("ffi_int")  # these tests contain large integer literals
+        )
+        is_int_64 = test_name.startswith("int_64") or test_name.endswith("_int64")
         is_bytearray = test_name.startswith("bytearray") or test_name.endswith("_bytearray")
         is_set_type = test_name.startswith(("set_", "frozenset")) or test_name.endswith("_set")
         is_slice = test_name.find("slice") != -1 or test_name in misc_slice_tests
-        is_async = test_name.startswith(("async_", "asyncio_"))
+        is_async = test_name.startswith(("async_", "asyncio_")) or test_name.endswith("_async")
         is_const = test_name.startswith("const")
         is_io_module = test_name.startswith("io_")
         is_fstring = test_name.startswith("string_fstring")
@@ -895,6 +913,7 @@ def run_tests(pyb, tests, args, result_dir, num_threads=1):
         skip_it |= skip_native and is_native
         skip_it |= skip_endian and is_endian
         skip_it |= skip_int_big and is_int_big
+        skip_it |= skip_int_64 and is_int_64
         skip_it |= skip_bytearray and is_bytearray
         skip_it |= skip_set_type and is_set_type
         skip_it |= skip_slice and is_slice
@@ -1130,29 +1149,11 @@ class append_filter(argparse.Action):
         args.filters.append((option, re.compile(value)))
 
 
-def main():
-    global injected_import_hook_code
-
-    cmd_parser = argparse.ArgumentParser(
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        description="""Run and manage tests for MicroPython.
-
+test_instance_description = """\
 By default the tests are run against the unix port of MicroPython. To run it
 against something else, use the -t option.  See below for details.
-
-Tests are discovered by scanning test directories for .py files or using the
-specified test files. If test files nor directories are specified, the script
-expects to be ran in the tests directory (where this file is located) and the
-builtin tests suitable for the target platform are ran.
-
-When running tests, run-tests.py compares the MicroPython output of the test with the output
-produced by running the test through CPython unless a <test>.exp file is found, in which
-case it is used as comparison.
-
-If a test fails, run-tests.py produces a pair of <test>.out and <test>.exp files in the result
-directory with the MicroPython output and the expectations, respectively.
-""",
-        epilog="""\
+"""
+test_instance_epilog = """\
 The -t option accepts the following for the test instance:
 - unix - use the unix port of MicroPython, specified by the MICROPY_MICROPYTHON
   environment variable (which defaults to the standard variant of either the unix
@@ -1168,7 +1169,35 @@ The -t option accepts the following for the test instance:
 - execpty:<command> - execute a command and attach to the printed /dev/pts/<n> device
 - <a>.<b>.<c>.<d> - connect to the given IPv4 address
 - anything else specifies a serial port
+"""
 
+test_directory_description = """\
+Tests are discovered by scanning test directories for .py files or using the
+specified test files. If test files nor directories are specified, the script
+expects to be ran in the tests directory (where this file is located) and the
+builtin tests suitable for the target platform are ran.
+"""
+
+
+def main():
+    global injected_import_hook_code
+
+    cmd_parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=f"""Run and manage tests for MicroPython.
+
+{test_instance_description}
+{test_directory_description}
+
+When running tests, run-tests.py compares the MicroPython output of the test with the output
+produced by running the test through CPython unless a <test>.exp file is found, in which
+case it is used as comparison.
+
+If a test fails, run-tests.py produces a pair of <test>.out and <test>.exp files in the result
+directory with the MicroPython output and the expectations, respectively.
+""",
+        epilog=f"""\
+{test_instance_epilog}
 Options -i and -e can be multiple and processed in the order given. Regex
 "search" (vs "match") operation is used. An action (include/exclude) of
 the last matching regex is used:
@@ -1313,6 +1342,8 @@ the last matching regex is used:
             )
             if args.inlineasm_arch is not None:
                 test_dirs += ("inlineasm/{}".format(args.inlineasm_arch),)
+            if args.thread is not None:
+                test_dirs += ("thread",)
             if args.platform == "pyboard":
                 # run pyboard tests
                 test_dirs += ("float", "stress", "ports/stm32")
@@ -1321,9 +1352,9 @@ the last matching regex is used:
             elif args.platform == "renesas-ra":
                 test_dirs += ("float", "ports/renesas-ra")
             elif args.platform == "rp2":
-                test_dirs += ("float", "stress", "thread", "ports/rp2")
+                test_dirs += ("float", "stress", "ports/rp2")
             elif args.platform == "esp32":
-                test_dirs += ("float", "stress", "thread")
+                test_dirs += ("float", "stress")
             elif args.platform in ("esp8266", "minimal", "samd", "nrf"):
                 test_dirs += ("float",)
             elif args.platform == "WiPy":

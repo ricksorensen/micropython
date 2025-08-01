@@ -76,12 +76,13 @@
 #ifndef MICROPY_FLOAT_IMPL // can be configured by each board via mpconfigboard.mk
 #define MICROPY_FLOAT_IMPL          (MICROPY_FLOAT_IMPL_FLOAT)
 #endif
+#define MICROPY_TIME_SUPPORT_Y1969_AND_BEFORE (1)
 #define MICROPY_USE_INTERNAL_ERRNO  (1)
 #define MICROPY_SCHEDULER_STATIC_NODES (1)
 #define MICROPY_SCHEDULER_DEPTH     (8)
 #define MICROPY_VFS                 (1)
 #ifndef MICROPY_VFS_ROM
-#define MICROPY_VFS_ROM (MICROPY_HW_ROMFS_ENABLE_INTERNAL_FLASH || MICROPY_HW_ROMFS_ENABLE_EXTERNAL_QSPI)
+#define MICROPY_VFS_ROM (MICROPY_HW_ROMFS_ENABLE_INTERNAL_FLASH || MICROPY_HW_ROMFS_ENABLE_EXTERNAL_QSPI || MICROPY_HW_ROMFS_ENABLE_EXTERNAL_XSPI)
 #endif
 
 // control over Python builtins
@@ -128,6 +129,10 @@
 #define MICROPY_PY_MACHINE_PULSE    (1)
 #define MICROPY_PY_MACHINE_PIN_MAKE_NEW mp_pin_make_new
 #define MICROPY_PY_MACHINE_I2C      (MICROPY_HW_ENABLE_HW_I2C)
+#define MICROPY_PY_MACHINE_I2C_TARGET (MICROPY_HW_ENABLE_HW_I2C_TARGET)
+#define MICROPY_PY_MACHINE_I2C_TARGET_INCLUDEFILE "ports/stm32/machine_i2c_target.c"
+#define MICROPY_PY_MACHINE_I2C_TARGET_MAX (4)
+#define MICROPY_PY_MACHINE_I2C_TARGET_HARD_IRQ (1)
 #define MICROPY_PY_MACHINE_SOFTI2C  (1)
 #define MICROPY_PY_MACHINE_I2S_INCLUDEFILE "ports/stm32/machine_i2s.c"
 #define MICROPY_PY_MACHINE_I2S_CONSTANT_RX (I2S_MODE_MASTER_RX)
@@ -229,8 +234,6 @@ extern const struct _mp_obj_type_t network_lan_type;
 
 // Assume that if we already defined the obj repr then we also defined these items
 #ifndef MICROPY_OBJ_REPR
-#define UINT_FMT "%u"
-#define INT_FMT "%d"
 typedef int mp_int_t; // must be pointer size
 typedef unsigned int mp_uint_t; // must be pointer size
 #endif

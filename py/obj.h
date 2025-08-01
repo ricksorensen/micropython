@@ -206,6 +206,10 @@ static inline mp_float_t mp_obj_float_get(mp_const_obj_t o) {
         mp_float_t f;
         mp_uint_t u;
     } num = {.u = ((mp_uint_t)o - 0x80800000u) & ~3u};
+    // Rather than always truncating toward zero, which creates a strong
+    // bias, copy the two previous bits to fill in the two missing bits.
+    // This appears to be a pretty good heuristic.
+    num.u |= (num.u >> 2) & 3u;
     return num.f;
 }
 static inline mp_obj_t mp_obj_new_float(mp_float_t f) {
@@ -554,6 +558,8 @@ typedef mp_obj_t (*mp_fun_kw_t)(size_t n, const mp_obj_t *, mp_map_t *);
 // If MP_TYPE_FLAG_ITER_IS_STREAM is set then the type implicitly gets a "return self"
 //   getiter, and mp_stream_unbuffered_iter for iternext.
 // If MP_TYPE_FLAG_INSTANCE_TYPE is set then this is an instance type (i.e. defined in Python).
+// If MP_TYPE_FLAG_SUBSCR_ALLOWS_STACK_SLICE is set then the "subscr" slot allows a stack
+//   allocated slice to be passed in (no references to it will be retained after the call).
 #define MP_TYPE_FLAG_NONE (0x0000)
 #define MP_TYPE_FLAG_IS_SUBCLASSED (0x0001)
 #define MP_TYPE_FLAG_HAS_SPECIAL_ACCESSORS (0x0002)
@@ -567,6 +573,7 @@ typedef mp_obj_t (*mp_fun_kw_t)(size_t n, const mp_obj_t *, mp_map_t *);
 #define MP_TYPE_FLAG_ITER_IS_CUSTOM (0x0100)
 #define MP_TYPE_FLAG_ITER_IS_STREAM (MP_TYPE_FLAG_ITER_IS_ITERNEXT | MP_TYPE_FLAG_ITER_IS_CUSTOM)
 #define MP_TYPE_FLAG_INSTANCE_TYPE (0x0200)
+#define MP_TYPE_FLAG_SUBSCR_ALLOWS_STACK_SLICE (0x0400)
 
 typedef enum {
     PRINT_STR = 0,
@@ -1051,6 +1058,8 @@ static inline bool mp_obj_is_integer(mp_const_obj_t o) {
 }
 
 mp_int_t mp_obj_get_int(mp_const_obj_t arg);
+mp_uint_t mp_obj_get_uint(mp_const_obj_t arg);
+long long mp_obj_get_ll(mp_const_obj_t arg);
 mp_int_t mp_obj_get_int_truncated(mp_const_obj_t arg);
 bool mp_obj_get_int_maybe(mp_const_obj_t arg, mp_int_t *value);
 #if MICROPY_PY_BUILTINS_FLOAT
