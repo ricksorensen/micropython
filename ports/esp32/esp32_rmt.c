@@ -32,6 +32,8 @@
 #include "modesp32.h"
 
 #include "esp_task.h"
+
+#if SOC_RMT_SUPPORTED
 #include "driver/rmt_tx.h"
 #include "driver/rmt_encoder.h"
 
@@ -420,3 +422,5 @@ MP_DEFINE_CONST_OBJ_TYPE(
     locals_dict, &esp32_rmt_locals_dict,
     protocol, &esp32_rmt_stream_p
     );
+
+#endif // SOC_RMT_SUPPORTED
