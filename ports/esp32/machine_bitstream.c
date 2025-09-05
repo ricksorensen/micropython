@@ -38,7 +38,8 @@
 // Bit-bang implementation
 
 #define NS_TICKS_OVERHEAD (6)
-
+#ifndef SOC_RMT_SUPPORTED
+#warning "INFO: machine_bitstream.c: Defining machine_bitstream_high_low_bitbang")
 // This is a translation of the cycle counter implementation in ports/stm32/machine_bitstream.c.
 static void IRAM_ATTR machine_bitstream_high_low_bitbang(mp_hal_pin_obj_t pin, uint32_t *timing_ns, const uint8_t *buf, size_t len) {
     uint32_t pin_mask, gpio_reg_set, gpio_reg_clear;
@@ -89,7 +90,7 @@ static void IRAM_ATTR machine_bitstream_high_low_bitbang(mp_hal_pin_obj_t pin, u
 
     mp_hal_quiet_timing_exit(irq_state);
 }
-
+#endif
 #if SOC_RMT_SUPPORTED
 /******************************************************************************/
 // RMT implementation
@@ -105,12 +106,24 @@ static void machine_bitstream_high_low_rmt(mp_hal_pin_obj_t pin, uint32_t *timin
     uint32_t clock_div = 2;
     rmt_channel_handle_t channel = NULL;
     // TODO create a permanent/reserved channel outside this function? Lazy creation?
+    // NOTE:
+    //    s3/p4 support DMA (.flags.with_dma =1), others do not
+    //    see SOC_RMT_SUPPORT_DMA
+
     rmt_tx_channel_config_t tx_chan_config = {
         .clk_src = RMT_CLK_SRC_DEFAULT,
         .gpio_num = pin,
-        .mem_block_symbols = 64,
         .resolution_hz = APB_CLK_FREQ / clock_div,
-        .trans_queue_depth = 1,
+        .trans_queue_depth = 1,   // should this be  biggert
+#if SOC_RMT_SUPPORT_DMA
+#warning "INFO: machine_bitstream rmt using DMA"
+        .mem_block_symbols = 1024,
+	.flags.with_dma = 1,
+#else
+#warning "INFO: machine_bitstream rmt no DMA"
+        .mem_block_symbols = 64,
+	.flags.with_dma = 0,
+#endif	
     };
     check_esp_err(rmt_new_tx_channel(&tx_chan_config, &channel));
     check_esp_err(rmt_enable(channel));
@@ -173,8 +186,10 @@ static void machine_bitstream_high_low_rmt(mp_hal_pin_obj_t pin, uint32_t *timin
 
 void machine_bitstream_high_low(mp_hal_pin_obj_t pin, uint32_t *timing_ns, const uint8_t *buf, size_t len) {
     #if SOC_RMT_SUPPORTED
+    #warning "INFO: machine_bitstream.c Using RMT bitstream"
     machine_bitstream_high_low_rmt(pin, timing_ns, buf, len);
     #else
+    #warning "INFO: machine_bitstream.c Using bitbang bitstream"
     // TODO test whether channel creation was successful?
     machine_bitstream_high_low_bitbang(pin, timing_ns, buf, len);
     #endif
