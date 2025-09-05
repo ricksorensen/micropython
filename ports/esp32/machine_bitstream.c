@@ -115,15 +115,15 @@ static void machine_bitstream_high_low_rmt(mp_hal_pin_obj_t pin, uint32_t *timin
         .gpio_num = pin,
         .resolution_hz = APB_CLK_FREQ / clock_div,
         .trans_queue_depth = 1,   // should this be  biggert
-#if SOC_RMT_SUPPORT_DMA
-#warning "INFO: machine_bitstream rmt using DMA"
+        #if SOC_RMT_SUPPORT_DMA
+        #warning "INFO: machine_bitstream rmt using DMA"
         .mem_block_symbols = 1024,
-	.flags.with_dma = 1,
-#else
-#warning "INFO: machine_bitstream rmt no DMA"
+        .flags.with_dma = 1,
+        #else
+        #warning "INFO: machine_bitstream rmt no DMA"
         .mem_block_symbols = 64,
-	.flags.with_dma = 0,
-#endif	
+        .flags.with_dma = 0,
+        #endif
     };
     check_esp_err(rmt_new_tx_channel(&tx_chan_config, &channel));
     check_esp_err(rmt_enable(channel));

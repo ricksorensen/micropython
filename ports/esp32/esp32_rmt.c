@@ -120,15 +120,15 @@ static mp_obj_t esp32_rmt_make_new(const mp_obj_type_t *type, size_t n_args, siz
         .gpio_num = self->pin,
         .resolution_hz = APB_CLK_FREQ / clock_div,
         .trans_queue_depth = 4,
-#if SOC_RMT_SUPPORT_DMA
-#warning "INFO: esp32_rmt.c: RMT using DMA"
-	.mem_block_symbols = num_symbols,
-	.flags.with_dma = 1,
-#else
-#warning "INFO: esp32_rmt.c: RMT not using DMA"
+        #if SOC_RMT_SUPPORT_DMA
+        #warning "INFO: esp32_rmt.c: RMT using DMA"
         .mem_block_symbols = num_symbols,
-	.flags.with_dma = 0,
-#endif
+        .flags.with_dma = 1,
+        #else
+        #warning "INFO: esp32_rmt.c: RMT not using DMA"
+        .mem_block_symbols = num_symbols,
+        .flags.with_dma = 0,
+        #endif
     };
 
     check_esp_err(rmt_new_tx_channel(&tx_chan_config, &self->channel));
