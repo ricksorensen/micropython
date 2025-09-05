@@ -111,13 +111,24 @@ static mp_obj_t esp32_rmt_make_new(const mp_obj_type_t *type, size_t n_args, siz
     self->tx_ongoing = 0;
     self->idle_level = idle_level;
     self->enabled = false;
+    // NOTE:
+    //    s3/p4 support DMA (.flags.with_dma =1), others do not
+    //    see SOC_RMT_SUPPORT_DMA
 
     rmt_tx_channel_config_t tx_chan_config = {
         .clk_src = RMT_CLK_SRC_DEFAULT,
         .gpio_num = self->pin,
-        .mem_block_symbols = num_symbols,
         .resolution_hz = APB_CLK_FREQ / clock_div,
         .trans_queue_depth = 4,
+#if SOC_RMT_SUPPORT_DMA
+#warning "INFO: esp32_rmt.c: RMT using DMA"
+	.mem_block_symbols = num_symbols,
+	.flags.with_dma = 1,
+#else
+#warning "INFO: esp32_rmt.c: RMT not using DMA"
+        .mem_block_symbols = num_symbols,
+	.flags.with_dma = 0,
+#endif
     };
 
     check_esp_err(rmt_new_tx_channel(&tx_chan_config, &self->channel));
