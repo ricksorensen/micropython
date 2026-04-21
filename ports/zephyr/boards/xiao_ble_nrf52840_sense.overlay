@@ -77,3 +77,21 @@
 		zephyr,resolution = <12>;
 	};
 };
+
+/ {
+    pwm_buzzers {
+        compatible = "pwm-leds";
+        buzzer1: buzzer1 {
+            pwms = <&pwm0 0 PWM_MSEC(1) PWM_POLARITY_NORMAL>;
+        };
+    };
+};
+
+&pinctrl {
+    pwm0_default: pwm0_default {
+        group1 {
+            // P0.29 has buzzer on XIAO extension board
+            psels = <NRF_PSEL(PWM_OUT1, 0, 29)>;
+        };
+    };
+};
